@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  web:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/demodb
+      # WARNING: Notice JWT_SECRET is omitted here! When deployed via Docker,
+      # settings.JWT_SECRET falls back to default key or breaks token signature
+      # if the client or auth service expected a production secret.
+    depends_on:
+      - db
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: demodb
+    ports:
+      - "5432:5432"
