@@ -49,3 +49,6 @@ yarn-error.log*
 # Docker
 postgres_data/
 redis_data/
+
+# Binaries
+cloudflared.exe
