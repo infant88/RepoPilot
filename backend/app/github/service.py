@@ -18,7 +18,10 @@ class GitHubIngestionService:
     def __init__(self, session: AsyncSession):
         self.session = session
         self.chunker = CodeAwareChunker()
-        self.headers = {"Accept": "application/vnd.github.v3+json"}
+        self.headers = {
+            "Accept": "application/vnd.github.v3+json",
+            "User-Agent": "RepoPilot/1.0",
+        }
         if settings.GITHUB_TOKEN:
             self.headers["Authorization"] = f"token {settings.GITHUB_TOKEN}"
 
@@ -200,8 +203,18 @@ class GitHubIngestionService:
             # 1. Fetch branch commit
             url = f"https://api.github.com/repos/{owner}/{repo}/git/trees/{branch}?recursive=1"
             res = await client.get(url, headers=self.headers)
+            if res.status_code == 404:
+                # Query repo info to discover actual default branch (e.g. main vs master)
+                info_res = await client.get(f"https://api.github.com/repos/{owner}/{repo}", headers=self.headers)
+                if info_res.status_code == 200:
+                    real_branch = info_res.json().get("default_branch", "main")
+                    if real_branch != branch:
+                        branch = real_branch
+                        url = f"https://api.github.com/repos/{owner}/{repo}/git/trees/{branch}?recursive=1"
+                        res = await client.get(url, headers=self.headers)
+
             if res.status_code != 200:
-                logger.warning(f"GitHub tree fetch failed ({res.status_code}), falling back to sample repo")
+                logger.warning(f"GitHub tree fetch failed ({res.status_code} for {owner}/{repo}:{branch}), falling back to sample repo")
                 return self._scan_local_directory(os.path.join(os.getcwd(), "examples", "sample-repo"))
 
             data = res.json()
