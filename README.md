@@ -3,6 +3,7 @@
 RepoPilot is an enterprise-grade AI Engineering Copilot powered by Retrieval-Augmented Generation (RAG), hybrid retrieval, cross-encoder reranking, and specialized LangGraph agents. It connects to GitHub repositories (or local codebases), indexes their source code and documentation using code-aware AST parsers, and enables software engineers to investigate architectures, debug production errors, audit security vulnerabilities, and receive precise, grounded answers with exact source line citations.
 
 ---
+project live link : https://ripe-charlie-packing-heaven.trycloudflare.com/
 
 ## 1. System Architecture
 
