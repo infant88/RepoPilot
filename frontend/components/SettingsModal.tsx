@@ -53,8 +53,8 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       setBaseUrl("http://localhost:11434/v1");
     } else if (type === "gemini") {
       setProvider("gemini");
-      setModel("gemini-1.5-flash");
-      setBaseUrl("https://generativelanguage.googleapis.com/v1beta/openai/");
+      setModel("gemini-flash-latest");
+      setBaseUrl("");
     }
   };
 

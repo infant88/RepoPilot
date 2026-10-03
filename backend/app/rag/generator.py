@@ -3,6 +3,8 @@ import json
 import logging
 import asyncio
 from typing import AsyncGenerator, List, Dict, Any, Optional
+import httpx
+
 from backend.app.core.config import settings
 from backend.app.rag.context_builder import BuiltContext
 from backend.app.schemas.chat import Citation
@@ -10,13 +12,13 @@ from backend.app.schemas.chat import Citation
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """You are RepoPilot, an expert AI Engineering Copilot.
-You assist developers in understanding architecture, finding implementations, debugging errors, exploring codebases, and security analysis.
+You assist developers in understanding architecture, finding implementations, debugging errors, exploring codebases, and performing security analysis.
 
 STRICT GROUNDING RULES:
 1. Always base your technical answers strictly on the provided repository source code evidence.
 2. If evidence for the specific query is missing or not present in this repository, state it explicitly and honestly. Never invent files, classes, methods, or configurations.
 3. Every claim must cite the exact file path and line numbers in standard format (e.g. `src/main.cpp:96-169` or `backend/auth/middleware.py:20-52`).
-4. Format your response cleanly using GitHub Markdown.
+4. Format your response cleanly using GitHub Markdown with clear sections (Answer, Evidence, Root Cause/Analysis, Suggested Fix/Next Steps).
 """
 
 class LLMService:
@@ -25,26 +27,33 @@ class LLMService:
 
     def reinitialize(self):
         self.provider = settings.LLM_PROVIDER.lower()
-        self.model = settings.LLM_MODEL
+        self.model = settings.LLM_MODEL or "gemini-flash-latest"
         self.api_key = settings.LLM_API_KEY
         self.base_url = settings.LLM_BASE_URL
         self._openai_client = None
 
-        if self.api_key or self.base_url:
+        is_gemini = (
+            self.provider == "gemini" 
+            or (self.api_key and (self.api_key.startswith("AQ.") or self.api_key.startswith("AIzaSy")))
+        )
+
+        if is_gemini and self.api_key:
+            logger.info(f"Initialized native Google Gemini client (model: {self.model})")
+        elif (self.api_key or self.base_url) and not is_gemini:
             try:
                 from openai import AsyncOpenAI
                 kwargs = {}
                 if self.api_key:
                     kwargs["api_key"] = self.api_key
                 else:
-                    kwargs["api_key"] = "ollama-or-local"
+                    kwargs["api_key"] = "local"
                 if self.base_url:
                     kwargs["base_url"] = self.base_url
 
                 self._openai_client = AsyncOpenAI(**kwargs)
-                logger.info(f"Initialized LLM client (provider: {self.provider}, model: {self.model}, base_url: {self.base_url})")
+                logger.info(f"Initialized OpenAI-compatible client (provider: {self.provider}, model: {self.model})")
             except Exception as e:
-                logger.warning(f"Could not initialize LLM client: {e}")
+                logger.warning(f"Could not initialize OpenAI client: {e}")
 
     async def generate_response_stream(
         self,
@@ -58,7 +67,7 @@ class LLMService:
         yield {
             "type": "agent_status",
             "agent": agent_name,
-            "status": f"Analyzing {len(built_context.citations)} evidence chunks...",
+            "status": f"Analyzing {len(built_context.citations)} evidence chunks with AI...",
         }
 
         citation_dicts = [c.model_dump() for c in built_context.citations]
@@ -67,8 +76,71 @@ class LLMService:
             "citations": citation_dicts,
         }
 
-        # 2. If configured with an active LLM provider (OpenAI, Groq, Ollama, Gemini, etc.), call real LLM
-        if self._openai_client and (self.api_key or self.base_url):
+        is_gemini = (
+            self.provider == "gemini" 
+            or (self.api_key and (self.api_key.startswith("AQ.") or self.api_key.startswith("AIzaSy")))
+        )
+
+        # 2. Native Google Gemini Streaming
+        if is_gemini and self.api_key:
+            try:
+                gemini_model = self.model if "gemini" in self.model else "gemini-flash-latest"
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{gemini_model}:streamGenerateContent?alt=sse"
+                headers = {
+                    "Content-Type": "application/json",
+                    "X-goog-api-key": self.api_key,
+                }
+                
+                # Combine system instructions, conversation history, and repository context
+                prompt_parts = [SYSTEM_PROMPT, "\n\n"]
+                if conversation_history:
+                    for h in conversation_history[-4:]:
+                        prompt_parts.append(f"{h['role'].upper()}: {h['content']}\n")
+                prompt_parts.append(built_context.formatted_prompt)
+                full_prompt = "".join(prompt_parts)
+
+                payload = {
+                    "contents": [
+                        {
+                            "role": "user",
+                            "parts": [{"text": full_prompt}]
+                        }
+                    ],
+                    "generationConfig": {
+                        "temperature": settings.LLM_TEMPERATURE,
+                    }
+                }
+
+                async with httpx.AsyncClient(timeout=45.0) as client:
+                    async with client.stream("POST", url, headers=headers, json=payload) as response:
+                        if response.status_code == 200:
+                            async for raw_line in response.aiter_lines():
+                                if raw_line.startswith("data: "):
+                                    chunk_json_str = raw_line[6:].strip()
+                                    if chunk_json_str:
+                                        try:
+                                            chunk_data = json.loads(chunk_json_str)
+                                            candidates = chunk_data.get("candidates", [])
+                                            if candidates:
+                                                parts = candidates[0].get("content", {}).get("parts", [])
+                                                for part in parts:
+                                                    token_text = part.get("text", "")
+                                                    if token_text:
+                                                        yield {"type": "token", "content": token_text}
+                                        except Exception:
+                                            pass
+
+                            yield {"type": "done", "status": "completed"}
+                            return
+                        else:
+                            err_body = await response.aread()
+                            logger.error(f"Gemini API returned status {response.status_code}: {err_body.decode('utf-8', errors='ignore')}")
+
+            except Exception as e:
+                logger.error(f"Error calling Google Gemini API: {e}. Falling back to dynamic synthesis.")
+
+        # 3. OpenAI or Compatible Client Streaming
+        elif self._openai_client and (self.api_key or self.base_url):
             try:
                 messages = [{"role": "system", "content": SYSTEM_PROMPT}]
                 if conversation_history:
@@ -92,9 +164,9 @@ class LLMService:
                 yield {"type": "done", "status": "completed"}
                 return
             except Exception as e:
-                logger.error(f"Error calling configured LLM: {e}. Falling back to dynamic grounded synthesis.")
+                logger.error(f"Error calling LLM provider: {e}. Falling back to dynamic grounded synthesis.")
 
-        # 3. Dynamic Grounded Reasoning Engine (Zero-dependency production fallback)
+        # 4. Dynamic Grounded Reasoning Engine (Zero-dependency fallback)
         async for chunk in self._stream_dynamic_grounded_synthesis(query, built_context, agent_name):
             yield chunk
 
@@ -112,10 +184,8 @@ class LLMService:
         citations = built_context.citations
         raw_prompt = built_context.formatted_prompt
 
-        # Extract file paths and languages present in citations
         files_retrieved = list(dict.fromkeys([c.file_path for c in citations]))
         
-        # Detect technologies from retrieved paths and code
         detected_tech = set()
         for f in files_retrieved:
             f_low = f.lower()
@@ -140,7 +210,6 @@ class LLMService:
             if f_low.endswith(".md"):
                 detected_tech.add("Markdown Documentation")
 
-        # Check for framework keywords in retrieved text
         prompt_low = raw_prompt.lower()
         if "fastapi" in prompt_low:
             detected_tech.add("FastAPI")
@@ -157,14 +226,12 @@ class LLMService:
         if "postgres" in prompt_low or "asyncpg" in prompt_low:
             detected_tech.add("PostgreSQL")
 
-        # Format Evidence Section
         evidence_lines = []
         for c in citations[:5]:
             snippet_clean = (c.snippet or "").strip().replace("\n", " ")[:120]
             evidence_lines.append(f"- `{c.file_path}:{c.start_line}-{c.end_line}` ({c.symbol_name or 'code block'}): `{snippet_clean}...`")
         evidence_str = "\n".join(evidence_lines) if evidence_lines else "- No direct source matches found."
 
-        # Case A: Tech Stack / Technologies question
         if any(term in q_lower for term in ["tech stack", "technology", "technologies", "stack", "frameworks", "tools"]):
             tech_list = "\n".join([f"- **{t}**" for t in sorted(detected_tech)]) if detected_tech else "- Standard Source Code & Documentation"
             text = f"""### Answer
@@ -180,8 +247,6 @@ Based on the indexed codebase and retrieved project files, this repository utili
 - **Primary Source Code**: Detected primarily in {', '.join([f'`{f}`' for f in files_retrieved[:4]])}.
 - **Configuration & Documentation**: Architectural requirements and specifications are maintained in `{', '.join([f for f in files_retrieved if f.endswith('.md')][:3]) or 'project documents'}`.
 """
-
-        # Case B: Specific token search (e.g. JWT, OAuth, or specific symbol)
         elif "jwt" in q_lower or "token" in q_lower:
             jwt_matches = [c for c in citations if "jwt" in (c.snippet or "").lower() or "token" in (c.snippet or "").lower()]
             if jwt_matches:
@@ -206,10 +271,7 @@ The retrieved files for this query were:
 ### Finding
 Upon inspecting the evidence from this repository ({', '.join([f'`{f}`' for f in files_retrieved[:3]])}), this codebase does not contain JWT token validation logic. It appears to be focused on {', '.join(detected_tech) or 'different system functionality'}.
 """
-
-        # Case C: 401 Unauthorized / Login debugging
         elif "401" in q_lower or "login" in q_lower or "unauthorized" in q_lower:
-            auth_matches = [c for c in citations if any(w in (c.snippet or "").lower() for w in ["401", "auth", "login", "token", "password", "user"])]
             text = f"""### Answer
 The HTTP 401 Unauthorized error occurs when credential validation or authorization checks fail in the request pipeline.
 
@@ -226,10 +288,7 @@ Verify the client includes the proper credentials and check your environment con
 JWT_SECRET=your-secret-key-here
 ```
 """
-
-        # Case D: Architecture / Structure question
         elif any(term in q_lower for term in ["architecture", "structure", "design", "how does", "overview", "components"]):
-            # Build architecture summary from the actual files
             main_files = [f for f in files_retrieved if "main" in f or "app" in f or "index" in f or "init" in f]
             doc_files = [f for f in files_retrieved if f.endswith(".md")]
             sub_modules = [f for f in files_retrieved if "/" in f]
@@ -238,7 +297,7 @@ JWT_SECRET=your-secret-key-here
 This repository is organized as a modular {', '.join(detected_tech) or 'software'} application.
 
 ### Key Architecture Components
-- **Entrypoint / Core**: `{', '.join(main_files) or files_retrieved[0] if files_retrieved else 'Main module'}` coordinates component lifecycle and execution.
+- **Entrypoint / Core**: `{', '.join(main_files) or (files_retrieved[0] if files_retrieved else 'Main module')}` coordinates component lifecycle and execution.
 - **Submodules & Logic**: Located across `{', '.join(sub_modules[:3]) or 'source directories'}`.
 - **Design & Specifications**: Documented in `{', '.join(doc_files[:2]) or 'project documentation'}`.
 
@@ -248,10 +307,7 @@ This repository is organized as a modular {', '.join(detected_tech) or 'software
 ### Architectural Highlights
 Based on the retrieved lines, the system follows a clear separation between core logic, interfaces, and operational modules. Review the cited line spans in the Monaco editor for detailed class definitions and signatures.
 """
-
-        # Case E: General / Personalized user question
         else:
-            # Dynamically extract snippets and explain them directly
             explanation_parts = []
             for c in citations[:4]:
                 if c.symbol_name:
@@ -272,11 +328,8 @@ Here is what the repository codebase contains regarding your query: **"{query}"*
 
 ### Summary
 The retrieved components above directly relate to your question. You can click any citation pill below to inspect the exact line ranges in the Monaco code viewer.
-
-*(Tip: To enable advanced open-ended conversational reasoning for complex questions, you can configure an OpenAI, Groq, or Ollama API key via the Settings button.)*
 """
 
-        # Stream words smoothly
         words = text.split(" ")
         for i in range(0, len(words), 3):
             sub_phrase = " ".join(words[i:i+3]) + " "
