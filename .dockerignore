@@ -1,0 +1,26 @@
+# Git
+.git
+.gitignore
+
+# Python
+backend/venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+*.db
+repopilot_local.db
+test.db
+
+# Node.js
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+npm-debug.log*
+
+# OS & IDE
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
