@@ -30,6 +30,7 @@ import FileTree, { FileTreeNode } from "@/components/FileTree";
 import CodeViewer from "@/components/CodeViewer";
 import ConnectRepoModal from "@/components/ConnectRepoModal";
 import EvaluationModal from "@/components/EvaluationModal";
+import SettingsModal from "@/components/SettingsModal";
 
 const API_BASE = "http://localhost:8000/api";
 
@@ -62,6 +63,7 @@ export default function Home() {
   // Modals
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
   const [isEvalModalOpen, setIsEvalModalOpen] = useState(false);
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -239,19 +241,25 @@ export default function Home() {
               } else if (event.type === "citations") {
                 setMessages((prev) => {
                   const updated = [...prev];
-                  const last = updated[updated.length - 1];
-                  if (last && last.role === "assistant") {
-                    last.citations = event.citations;
-                    last.retrieval_latency_ms = event.retrieval_latency_ms;
+                  const lastIdx = updated.length - 1;
+                  if (lastIdx >= 0 && updated[lastIdx].role === "assistant") {
+                    updated[lastIdx] = {
+                      ...updated[lastIdx],
+                      citations: event.citations,
+                      retrieval_latency_ms: event.retrieval_latency_ms,
+                    };
                   }
                   return updated;
                 });
               } else if (event.type === "token") {
                 setMessages((prev) => {
                   const updated = [...prev];
-                  const last = updated[updated.length - 1];
-                  if (last && last.role === "assistant") {
-                    last.content += event.content;
+                  const lastIdx = updated.length - 1;
+                  if (lastIdx >= 0 && updated[lastIdx].role === "assistant") {
+                    updated[lastIdx] = {
+                      ...updated[lastIdx],
+                      content: updated[lastIdx].content + event.content,
+                    };
                   }
                   return updated;
                 });
@@ -287,6 +295,7 @@ export default function Home() {
         currentRepo={currentRepo}
         onOpenConnectModal={() => setIsConnectModalOpen(true)}
         onOpenEvalModal={() => setIsEvalModalOpen(true)}
+        onOpenSettingsModal={() => setIsSettingsModalOpen(true)}
         onRefreshIndex={handleRefreshIndex}
         isIndexing={currentRepo?.status !== "COMPLETED" && currentRepo?.status !== "FAILED"}
       />
@@ -573,6 +582,11 @@ export default function Home() {
         isOpen={isEvalModalOpen}
         onClose={() => setIsEvalModalOpen(false)}
         repositoryId={currentRepo?.id}
+      />
+
+      <SettingsModal
+        isOpen={isSettingsModalOpen}
+        onClose={() => setIsSettingsModalOpen(false)}
       />
     </div>
   );

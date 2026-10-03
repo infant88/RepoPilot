@@ -1,12 +1,13 @@
 "use client";
 
 import React from "react";
-import { GitBranch, Terminal, Shield, Cpu, RefreshCw, BarChart2, Plus, Github } from "lucide-react";
+import { GitBranch, Terminal, Shield, Cpu, RefreshCw, BarChart2, Plus, Github, Settings } from "lucide-react";
 
 interface NavbarProps {
   currentRepo: any;
   onOpenConnectModal: () => void;
   onOpenEvalModal: () => void;
+  onOpenSettingsModal: () => void;
   onRefreshIndex: () => void;
   isIndexing: boolean;
 }
@@ -15,6 +16,7 @@ export default function Navbar({
   currentRepo,
   onOpenConnectModal,
   onOpenEvalModal,
+  onOpenSettingsModal,
   onRefreshIndex,
   isIndexing,
 }: NavbarProps) {
@@ -86,6 +88,15 @@ export default function Navbar({
         >
           <BarChart2 className="w-3.5 h-3.5 text-indigo-400" />
           <span>RAG Evaluation</span>
+        </button>
+
+        {/* LLM Settings */}
+        <button
+          onClick={onOpenSettingsModal}
+          className="p-1.5 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition-colors border border-slate-800"
+          title="LLM Settings & API Keys"
+        >
+          <Settings className="w-4 h-4" />
         </button>
 
         {/* Connect GitHub Repo */}
