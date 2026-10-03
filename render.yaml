@@ -1,0 +1,58 @@
+databases:
+  - name: repopilot-db
+    databaseName: repopilot
+    user: repopilot
+    plan: starter
+    postgresMajorVersion: "16"
+
+services:
+  # Redis Cache & Background Queue
+  - type: redis
+    name: repopilot-redis
+    plan: starter
+    ipAllowList: []
+
+  # FastAPI RAG Backend
+  - type: web
+    name: repopilot-backend
+    runtime: docker
+    dockerfilePath: ./infrastructure/docker/Dockerfile.backend
+    dockerContext: .
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: repopilot-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: repopilot-redis
+          property: connectionString
+      - key: LLM_PROVIDER
+        value: gemini
+      - key: LLM_API_KEY
+        sync: false
+      - key: LLM_MODEL
+        value: gemini-flash-latest
+      - key: EMBEDDING_PROVIDER
+        value: local
+      - key: EMBEDDING_MODEL
+        value: BAAI/bge-small-en-v1.5
+      - key: EMBEDDING_DIMENSION
+        value: "384"
+      - key: PORT
+        value: "8000"
+
+  # Next.js Web Frontend
+  - type: web
+    name: repopilot-frontend
+    runtime: node
+    plan: starter
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NEXT_PUBLIC_API_URL
+        sync: false

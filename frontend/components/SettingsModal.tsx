@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { X, Settings, Key, Check, Cpu, Zap, AlertCircle } from "lucide-react";
+import { API_BASE } from "@/lib/api";
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -25,7 +26,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
   const fetchSettings = async () => {
     try {
-      const res = await fetch("http://localhost:8000/api/settings");
+      const res = await fetch(`${API_BASE}/settings`);
       if (res.ok) {
         const data = await res.json();
         setProvider(data.llm_provider || "openai");
@@ -63,7 +64,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     setIsSaving(true);
     setStatusMessage(null);
     try {
-      const res = await fetch("http://localhost:8000/api/settings", {
+      const res = await fetch(`${API_BASE}/settings`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

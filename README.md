@@ -195,3 +195,24 @@ pytest backend/tests -v
 - `POST /api/agents/run`: Execute specialized LangGraph multi-step agent.
 - `POST /api/evaluations/run`: Run RAG benchmarking test suite.
 - `POST /api/github/webhook`: Ingest GitHub commit push events for incremental diff re-indexing.
+
+---
+
+## 9. Live Cloud Deployment (Render Blueprint)
+
+RepoPilot includes an automated [`render.yaml`](./render.yaml) blueprint specification for 1-click full-stack deployment (PostgreSQL + pgvector, Redis, FastAPI Backend, and Next.js Frontend).
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/infant88/RepoPilot)
+
+### Deployment Steps:
+1. Click the **Deploy to Render** button above or go to [dashboard.render.com/blueprints](https://dashboard.render.com/blueprints).
+2. Connect your GitHub repository (`https://github.com/infant88/RepoPilot`).
+3. Render automatically provisions:
+   - **PostgreSQL Database** with vector extension support.
+   - **Redis Instance** for caching & asynchronous task queues.
+   - **FastAPI Backend Web Service** (Docker container running Uvicorn).
+   - **Next.js Frontend Web Service** (Node 20 production build).
+4. Enter your `LLM_API_KEY` (e.g., Google Gemini or OpenAI API Key).
+5. Set `NEXT_PUBLIC_API_URL` on the frontend service to `https://<your-backend-service-name>.onrender.com/api`.
+6. Your live RepoPilot instance is online and accessible globally over HTTPS!
+

@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { X, Play, CheckCircle2, AlertTriangle, Clock, Zap, DollarSign, Target, Award } from "lucide-react";
+import { API_BASE } from "@/lib/api";
 
 interface EvaluationModalProps {
   isOpen: boolean;
@@ -28,7 +29,7 @@ export default function EvaluationModal({
     setError(null);
     setIsRunning(true);
     try {
-      const res = await fetch("http://localhost:8000/api/evaluations/run", {
+      const res = await fetch(`${API_BASE}/evaluations/run`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ repository_id: repositoryId }),

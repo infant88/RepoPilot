@@ -31,8 +31,7 @@ import CodeViewer from "@/components/CodeViewer";
 import ConnectRepoModal from "@/components/ConnectRepoModal";
 import EvaluationModal from "@/components/EvaluationModal";
 import SettingsModal from "@/components/SettingsModal";
-
-const API_BASE = "http://localhost:8000/api";
+import { API_BASE } from "@/lib/api";
 
 interface Message {
   id?: string;
